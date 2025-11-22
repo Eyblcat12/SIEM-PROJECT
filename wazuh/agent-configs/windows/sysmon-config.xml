@@ -1,0 +1,17 @@
+<Sysmon schemaversion="4.82">
+  <EventFiltering>
+    <ProcessCreate onmatch="exclude">
+      <CommandLine condition="contains">chrome.exe</CommandLine>
+      <CommandLine condition="contains">msedge.exe</CommandLine>
+    </ProcessCreate>
+
+    <NetworkConnect onmatch="include">
+      <Image condition="end with">powershell.exe</Image>
+      <Image condition="end with">cmd.exe</Image>
+    </NetworkConnect>
+
+    <FileCreateTime onmatch="exclude" />
+    <DriverLoad onmatch="include" />
+    <ImageLoad onmatch="exclude" />
+  </EventFiltering>
+</Sysmon>
