@@ -1,17 +1,54 @@
 <Sysmon schemaversion="4.82">
+  <!-- HashAlgorithms: Ghi lại mã hash của file thực thi (MD5, SHA256) để so sánh với VirusTotal -->
+  <HashAlgorithms>md5,sha256</HashAlgorithms>
+  
   <EventFiltering>
+    <!-- Event ID 1: Process Creation - Bắt các tiến trình nguy hiểm -->
+    <ProcessCreate onmatch="include">
+      <Image condition="end with">cmd.exe</Image>
+      <Image condition="end with">powershell.exe</Image>
+      <Image condition="end with">wscript.exe</Image>
+      <Image condition="end with">cscript.exe</Image>
+      <Image condition="end with">rundll32.exe</Image>
+      <Image condition="end with">reg.exe</Image>
+      <Image condition="end with">whoami.exe</Image>
+      <Image condition="end with">net.exe</Image>
+      <Image condition="end with">ipconfig.exe</Image>
+      <!-- Bắt hành vi chạy file từ thư mục Temp (thường là Virus) -->
+      <Image condition="contains">\AppData\Local\Temp\</Image>
+    </ProcessCreate>
+    
+    <!-- Loại bỏ log rác từ Chrome/Edge (cho đỡ nặng) -->
     <ProcessCreate onmatch="exclude">
-      <CommandLine condition="contains">chrome.exe</CommandLine>
-      <CommandLine condition="contains">msedge.exe</CommandLine>
+      <Image condition="end with">chrome.exe</Image>
+      <Image condition="end with">msedge.exe</Image>
     </ProcessCreate>
 
+    <!-- Event ID 3: Network Connection - Bắt kết nối mạng từ các công cụ script -->
     <NetworkConnect onmatch="include">
       <Image condition="end with">powershell.exe</Image>
       <Image condition="end with">cmd.exe</Image>
+      <Image condition="end with">wscript.exe</Image>
     </NetworkConnect>
 
-    <FileCreateTime onmatch="exclude" />
-    <DriverLoad onmatch="include" />
-    <ImageLoad onmatch="exclude" />
+    <!-- Event ID 11: File Create - Bắt hành vi tải file về (đặc biệt là file thực thi) -->
+    <FileCreate onmatch="include">
+      <TargetFilename condition="end with">.exe</TargetFilename>
+      <TargetFilename condition="end with">.vbs</TargetFilename>
+      <TargetFilename condition="end with">.bat</TargetFilename>
+      <TargetFilename condition="end with">.ps1</TargetFilename>
+    </FileCreate>
+
+    <!-- Event ID 12/13/14: Registry Event - Bắt hành vi cài cắm Persistence (khởi động cùng Win) -->
+    <RegistryEvent onmatch="include">
+      <TargetObject condition="contains">CurrentVersion\Run</TargetObject>
+      <TargetObject condition="contains">Windows\System\Scripts</TargetObject>
+    </RegistryEvent>
+
+    <!-- Event ID 22: DNS Query - Bắt hành vi truy vấn tên miền (cực quan trọng để phát hiện C2 Server) -->
+    <DnsQuery onmatch="exclude">
+      <QueryName condition="end with">google.com</QueryName>
+      <QueryName condition="end with">microsoft.com</QueryName>
+    </DnsQuery>
   </EventFiltering>
 </Sysmon>
