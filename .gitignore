@@ -1,0 +1,8 @@
+# Wazuh specific ignores
+*.pem
+*.key
+*.p12
+*.jks
+wazuh-certificates.tar
+wazuh-certificates/
+/wazuh/logs/
