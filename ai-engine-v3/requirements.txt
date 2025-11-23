@@ -1,2 +1,2 @@
-pip install pandas numpy scikit-learn joblib colorama xgboost scipy catboost lightgbm    
+pip install pandas numpy scikit-learn joblib colorama xgboost scipy catboost lightgbm fpdf
 

@@ -12,6 +12,7 @@ ABUSEIPDB_API_KEY = "dien_key_that_cua_ban_vao_day"
 # Nếu AbuseIPDB báo confidence > 50% thì coi là độc hại
 ABUSEIPDB_THRESHOLD = 50 
 # Nếu VirusTotal có > 3 engines báo đỏ thì coi là độc hại
+
 VIRUSTOTAL_THRESHOLD = 3
 
 def check_ip_abuseipdb(ip_address):
