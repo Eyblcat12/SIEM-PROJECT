@@ -1,8 +1,32 @@
-# Wazuh specific ignores
+--- Python ---
+
+pycache/
+*.py[cod]
+*$py.class
+venv/
+env/
+.env
+
+--- Wazuh Sensitive Data ---
+
 *.pem
 *.key
 *.p12
-*.jks
 wazuh-certificates.tar
 wazuh-certificates/
-/wazuh/logs/
+indexer/internal_users.yml
+manager/filebeat.yml
+
+--- Logs & Reports ---
+
+.log
+reports/.pdf
+reports/*.json
+logs/
+
+--- IDE & OS ---
+
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
