@@ -2,11 +2,18 @@ import requests
 import json
 import sys
 from utils import logger
+import os
+from dotenv import load_dotenv
 
+# Load .env
+load_dotenv()
+
+# Lấy API key từ biến môi trường
+ABUSEIPDB_API_KEY = os.getenv("ABUSEIPDB_API_KEY")
+VIRUSTOTAL_API_KEY = os.getenv("VIRUSTOTAL_API_KEY")
 # --- CẤU HÌNH API KEY (Thay bằng key của bạn) ---
 # Khuyên dùng biến môi trường để bảo mật hơn.
-VIRUSTOTAL_API_KEY = "dien_key_that_cua_ban_vao_day"
-ABUSEIPDB_API_KEY = "dien_key_that_cua_ban_vao_day"
+
 
 # --- CẤU HÌNH NGƯỠNG (Threshold) ---
 # Nếu AbuseIPDB báo confidence > 50% thì coi là độc hại
@@ -53,7 +60,7 @@ def check_ip_abuseipdb(ip_address):
         logger.error(f"Lỗi kết nối AbuseIPDB: {e}")
         return False, 0, "Error"
 
-def check_hash_virustotal(file_hash):
+def check_hash_virustotal(file_hash, file_path=None):
     """
     Kiểm tra mã băm (MD5/SHA256) trên VirusTotal.
     Trả về: (is_malicious, positives_count, total_engines)
@@ -76,8 +83,12 @@ def check_hash_virustotal(file_hash):
             
             is_malicious = malicious >= VIRUSTOTAL_THRESHOLD
             if is_malicious:
-                logger.info(f"🦠 VirusTotal: File hash {file_hash} là MALWARE ({malicious}/{total})")
-            
+                log_msg = f"🦠 VirusTotal: PHÁT HIỆN MALWARE! ({malicious}/{total})"
+                log_msg += f"\n   - Hash: {file_hash}"
+                if file_path:
+                    log_msg += f"\n   - 📂 Đường dẫn file: {file_path}" # In đường dẫn tại đây
+                
+                logger.info(log_msg)
             return is_malicious, malicious, total
         elif response.status_code == 404:
             logger.info(f"VirusTotal: Hash {file_hash} chưa từng được quét.")
@@ -99,5 +110,6 @@ if __name__ == "__main__":
     
     # 2. Test Hash (Hash của EICAR Test File - Virus giả lập)
     eicar_md5 = "44d88612fea8a8f36de82e1278abb02f"
+    fake_path = "C:\\Windows\\System32\\suspicious_file.exe" # Giả lập đường dẫn
     print(f"\nChecking Hash {eicar_md5}:")
-    check_hash_virustotal(eicar_md5)
+    check_hash_virustotal(eicar_md5,file_path=fake_path)

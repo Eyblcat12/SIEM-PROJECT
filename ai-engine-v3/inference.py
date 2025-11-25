@@ -8,7 +8,15 @@ import argparse
 import sys
 import os
 
-# --- Import module gửi Telegram ---
+# --- 1. IMPORT MODULE TI LOOKUP ---
+try:
+    from ti_lookup import check_ip_abuseipdb, check_hash_virustotal
+    TI_ENABLED = True
+except ImportError:
+    logger.warning("⚠️ Không tìm thấy ti_lookup.py. Tính năng kiểm tra IP/Hash sẽ tắt.")
+    TI_ENABLED = False
+
+# --- Import Telegram ---
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 try:
     from scripts.send_telegram import send_alert
@@ -22,21 +30,16 @@ if sys.platform == "win32":
 def load_all():
     try:
         if not os.path.exists(MODEL_PATH):
-            logger.error(f"❌ Không tìm thấy model: {MODEL_PATH}")
             return None, None, None
         return load_artifacts(MODEL_PATH, ENCODERS_PATH, VECTORIZER_PATH)
-    except Exception as e:
-        logger.error(f"Lỗi load model: {e}")
+    except Exception:
         return None, None, None
 
 def predict_from_dataframe(df):
     model, artifacts, vectorizer = load_all()
     if model is None: return None, None
 
-    # 1. Xử lý dữ liệu (quan trọng: is_training=False)
     X_num, X_cat, X_text, _ = feature_engineer(df, is_training=False)
-
-    # 2. Gán lại cột full_text vào DataFrame gốc để hiển thị sau này
     df['full_text'] = X_text 
 
     try:
@@ -52,14 +55,7 @@ def predict_from_dataframe(df):
         X_full = hstack([X_pre, X_text_tfidf])
         probs = model.predict_proba(X_full)[:, 1]
         
-        # Đọc threshold từ file nếu có
-        threshold_path = os.path.join(os.path.dirname(MODEL_PATH), "threshold.txt")
-        if os.path.exists(threshold_path):
-            with open(threshold_path, "r") as f:
-                threshold = float(f.read().strip())
-        else:
-            threshold = 0.5
-            
+        threshold = 0.5
         preds = (probs >= threshold).astype(int)
         return preds, probs
     except Exception as e:
@@ -67,72 +63,65 @@ def predict_from_dataframe(df):
         return None, None
 
 def alert_threats(df):
-    if not TELEGRAM_ENABLED: return
     threats = df[df['ai_pred'] == 1]
     if threats.empty: return
 
-    logger.info(f"🚀 Đang gửi cảnh báo cho {len(threats)} mối đe dọa...")
-    # Gửi tối đa 3 cảnh báo để tránh spam
-    for _, row in threats.head(3).iterrows():
+    logger.info(f"🚀 Đang xử lý {len(threats)} mối đe dọa (Kiểm tra TI & Gửi Telegram)...")
+    
+    for _, row in threats.head(5).iterrows():
         msg = f"🚨 *AI DETECTED THREAT!* (Score: {row['ai_score']:.2f})\n"
         msg += f"🖥️ Agent: `{row.get('agent.name', 'Unknown')}`\n"
-        msg += f"🔥 Level: {row.get('rule.level', 0)}\n"
         
-        # Cắt ngắn text khi gửi Telegram cho gọn
+        ti_info = ""
+        if TI_ENABLED:
+            # --- QUAN TRỌNG: KIỂM TRA TÊN CỘT CSV Ở ĐÂY ---
+            # Bạn có thể cần sửa 'data.srcip' thành tên cột IP trong file CSV của bạn
+            src_ip = row.get('data.srcip') or row.get('src_ip')
+            
+            # Bạn có thể cần sửa 'syscheck.sha256_after' thành tên cột Hash trong CSV
+            file_hash = row.get('syscheck.sha256_after') or row.get('data.virustotal.sha256')
+            file_path = row.get('syscheck.path') or row.get('file_path')
+
+            if src_ip and str(src_ip) != 'nan':
+                is_mal_ip, ip_score, country = check_ip_abuseipdb(src_ip)
+                if is_mal_ip:
+                    ti_info += f"🚫 *Bad IP:* {src_ip} ({country}) - Score: {ip_score}%\n"
+
+            if file_hash and str(file_hash) != 'nan':
+                is_mal_hash, positives, total = check_hash_virustotal(file_hash, file_path=file_path)
+                if is_mal_hash:
+                    ti_info += f"🦠 *Malware:* {positives}/{total} engines\n"
+                    if file_path: ti_info += f"📂 `{file_path}`\n"
+
+        if ti_info: msg += "\n🔍 *THREAT INTEL:*\n" + ti_info + "\n"
+        
         full_text = str(row.get('full_text', 'N/A'))
         if len(full_text) > 100: full_text = full_text[:100] + "..."
-        msg += f"📝 Cmd: `{full_text}`\n"
-        msg += f"⏰ Time: {row.get('timestamp', 'N/A')}"
-        send_alert(msg)
+        msg += f"📝 Log: `{full_text}`"
+        
+        if TELEGRAM_ENABLED: send_alert(msg)
+        else: print(msg)
 
 if __name__ == '__main__':
-    # --- CẤU HÌNH HIỂN THỊ PANDAS (Để in bảng đẹp) ---
-    pd.set_option('display.max_columns', None)   # Hiện tất cả các cột
-    pd.set_option('display.width', 1000)         # Mở rộng chiều ngang console
-    pd.set_option('display.max_colwidth', None)  # Không cắt nội dung text dài
-
+    pd.set_option('display.max_columns', None)
     parser = argparse.ArgumentParser()
     parser.add_argument('--file', type=str, default=str(DATA_PATH))
     args = parser.parse_args()
 
-    logger.info(f"🧪 Bắt đầu dự đoán trên file: {args.file}")
+    logger.info(f"🧪 Bắt đầu dự đoán: {args.file}")
     try:
         df = read_csv_safe(args.file)
         preds, probs = predict_from_dataframe(df)
         
         if preds is not None:
-            # Gán kết quả vào DataFrame
             df['ai_pred'] = preds
             df['ai_score'] = probs
-            
             n_threats = sum(preds)
             print(f"\n📊 Tổng: {len(df)} | 🚨 Threat: {n_threats}")
             
             if n_threats > 0:
-                # --- LỌC VÀ IN KẾT QUẢ ---
-                # 1. Định nghĩa danh sách cột muốn xem
-                cols_to_show = ['timestamp', 'agent.name', 'rule.level', 'ai_score', 'ai_pred', 'full_text']
-                
-                # 2. Lọc lấy các dòng là Threat và sắp xếp theo điểm rủi ro giảm dần
-                threat_df = df[df['ai_pred'] == 1].sort_values(by='ai_score', ascending=False)
-                
-                # 3. Chỉ lấy các cột tồn tại thực tế (tránh lỗi KeyError)
-                valid_cols = [c for c in cols_to_show if c in threat_df.columns]
-                
-                print("\n🔍 CHI TIẾT MỐI ĐE DỌA (Top 5):")
-                
-                # 4. IN RA MÀN HÌNH
-                # formatters: Cắt ngắn cột full_text xuống 80 ký tự + "..." để bảng không bị vỡ quá mức
-                print(threat_df[valid_cols].head(5).to_string(
-                    index=False,
-                    formatters={'full_text': lambda x: str(x)[:80] + '...' if len(str(x)) > 80 else str(x)}
-                ))
-                
                 alert_threats(df)
             else:
-                print("✅ Không phát hiện mối đe dọa nào.")
-                
+                print("✅ Sạch. Không có mối đe dọa.")
     except Exception as e:
-        logger.error(f"Lỗi chính: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"Lỗi: {e}")

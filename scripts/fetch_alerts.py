@@ -4,7 +4,7 @@ import pandas as pd
 import urllib3
 import time
 import sys
-
+import os
 sys.stdout.reconfigure(encoding='utf-8')
 # Tắt cảnh báo chứng chỉ SSL tự ký 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -15,20 +15,32 @@ USERNAME = "admin"
 PASSWORD = "admin"  
 # -----------------------------------------------------------
 
-def fetch_latest_alerts(limit=500):
+def fetch_latest_alerts(limit=1000):
     """
-    Hàm này kết nối vào Database Wazuh để lấy log cảnh báo
+    Hàm này kết nối vào Database Wazuh để lấy log cảnh báo MỚI NHẤT (Trong 2 phút qua)
     """
     print(f"🔌 Đang kết nối tới {INDEXER_URL}...")
     
-    # Đường dẫn API tìm kiếm trong Indexer
     url = f"{INDEXER_URL}/wazuh-alerts-*/_search"
     
-    # Query: Lấy log mới nhất
+    # --- SỬA ĐỔI QUAN TRỌNG: THÊM BỘ LỌC THỜI GIAN ---
     payload = {
         "size": limit,
         "query": {
-            "match_all": {} 
+            "bool": {
+                "must": [
+                    # Chỉ lấy log trong khoảng thời gian từ (Bây giờ - 2 phút) đến hiện tại
+                    {
+                        "range": {
+                            "timestamp": {
+                                "gte": "now-5m", 
+                                "lt": "now"
+                            }
+                        }
+                    }
+                    # Nếu Wazuh của bạn dùng trường '@timestamp' thì sửa chữ 'timestamp' ở trên thành '@timestamp' nhé
+                ]
+            }
         },
         "sort": [
             {
@@ -40,21 +52,19 @@ def fetch_latest_alerts(limit=500):
     }
 
     try:
-        # Gửi request
         response = requests.get(
             url, 
             auth=(USERNAME, PASSWORD), 
             json=payload, 
-            verify=False, # Bỏ qua check SSL
+            verify=False, 
             timeout=10
         )
 
         if response.status_code == 200:
             data = response.json()
             hits = data['hits']['hits']
-            print(f"✅ Thành công! Đã lấy được {len(hits)} cảnh báo.")
+            print(f"✅ Thành công! Đã lấy được {len(hits)} cảnh báo MỚI.")
             
-            # Trích xuất dữ liệu sạch (chỉ lấy phần _source)
             clean_logs = [hit['_source'] for hit in hits]
             return clean_logs
         else:
@@ -64,7 +74,6 @@ def fetch_latest_alerts(limit=500):
 
     except Exception as e:
         print(f"❌ Lỗi nghiêm trọng: {e}")
-        print("💡 Gợi ý: Kiểm tra lại xem Ubuntu đã mở port 9200 chưa? (sudo ufw allow 9200)")
         return []
 
 def save_to_json(data, filename="wazuh_alerts.json"):
@@ -86,11 +95,11 @@ def save_to_csv(data, filename="wazuh_alerts.csv"):
 if __name__ == "__main__":
     print("--- BẮT ĐẦU THU THẬP DỮ LIỆU ---")
     logs = fetch_latest_alerts()
-    
+    PROJECT_ROOT = "D:/SIEM-PROJECT"
     if logs:
         # Lưu file ra thư mục gốc của dự án (..) để dễ thấy
-        save_to_json(logs, "../wazuh_data.json")
-        save_to_csv(logs, "../wazuh_data.csv")
-        print("\n🎉 Xong! Kiểm tra thư mục gốc SIEM-PROJECT xem có file csv chưa.")
+        csv_path = os.path.join(PROJECT_ROOT, "wazuh_data.csv")
+        save_to_csv(logs, csv_path)
+        print(f"\n🎉 Xong! Đã cập nhật dữ liệu mới vào: {csv_path}")
     else:
-        print("\n⚠️ Không lấy được dữ liệu nào.")
+        print("\n⚠️ Không có log mới trong 5 phút qua. Hệ thống đang chờ...")
